@@ -1,0 +1,1138 @@
+<html lang="bn"><head>
+<!-- Playables SDK -->
+<script>// Playables SDK v1.0.0
+// Game lifecycle bridge: rAF-based game-ready detection + event communication
+(function() {
+  'use strict';
+
+  // Idempotency: skip if already initialized (e.g., server-side injection
+  // followed by client-side inject-javascript via the Bloks webview component).
+  if (window.playablesSDK) return;
+
+  var HANDLER_NAME = 'playablesGameEventHandler';
+  var ANDROID_BRIDGE_NAME = '_MetaPlayablesBridge';
+  var RAF_FRAME_THRESHOLD = 3;
+
+  var gameReadySent = false;
+  var firstInteractionSent = false;
+  var errorSent = false;
+  var frameCount = 0;
+  var originalRAF = window.requestAnimationFrame;
+
+  // --- Transport Layer ---
+
+  function hasIOSBridge() {
+    return !!(window.webkit &&
+              window.webkit.messageHandlers &&
+              window.webkit.messageHandlers[HANDLER_NAME]);
+  }
+
+  function hasAndroidBridge() {
+    return !!(window[ANDROID_BRIDGE_NAME] &&
+              typeof window[ANDROID_BRIDGE_NAME].postEvent === 'function');
+  }
+
+  function isInIframe() {
+    return !!(window.parent && window.parent !== window);
+  }
+
+  function sendEvent(eventName, payload) {
+    var message = {
+      type: eventName,
+      payload: payload || {},
+      timestamp: Date.now()
+    };
+
+    if (hasIOSBridge()) {
+      try {
+        window.webkit.messageHandlers[HANDLER_NAME].postMessage(message);
+      } catch (e) { /* ignore */ }
+      return;
+    }
+
+    if (hasAndroidBridge()) {
+    try {
+      var p = payload || {};
+      p.__secureToken = window.__fbAndroidBridgeAuthToken || '';
+      p.timestamp = message.timestamp;
+      window[ANDROID_BRIDGE_NAME].postEvent(
+        eventName,
+        JSON.stringify(p)
+      );
+    } catch (e) { /* ignore */ }
+    return;
+  }
+
+    if (isInIframe()) {
+      try {
+        window.parent.postMessage(message, '*');
+      } catch (e) { /* ignore */ }
+      return;
+    }
+  }
+
+  // --- rAF Game-Ready Detection ---
+
+  function onFrame() {
+    if (gameReadySent) return;
+
+    frameCount++;
+    if (frameCount >= RAF_FRAME_THRESHOLD) {
+      gameReadySent = true;
+      sendEvent('game_ready', {
+        frame_count: frameCount,
+        detected_at: Date.now()
+      });
+      return;
+    }
+
+    originalRAF.call(window, onFrame);
+  }
+
+  if (originalRAF) {
+    window.requestAnimationFrame = function(callback) {
+      if (!gameReadySent) {
+        return originalRAF.call(window, function(timestamp) {
+          frameCount++;
+          if (frameCount >= RAF_FRAME_THRESHOLD && !gameReadySent) {
+            gameReadySent = true;
+            sendEvent('game_ready', {
+              frame_count: frameCount,
+              detected_at: Date.now()
+            });
+          }
+          callback(timestamp);
+        });
+      }
+      return originalRAF.call(window, callback);
+    };
+  }
+
+  // --- First User Interaction Detection ---
+
+  function setupFirstInteractionDetection() {
+    var events = ['touchstart', 'mousedown', 'keydown'];
+
+    function onFirstInteraction() {
+      if (firstInteractionSent) return;
+      firstInteractionSent = true;
+      sendEvent('user_interaction_start', null);
+
+      for (var i = 0; i < events.length; i++) {
+        document.removeEventListener(events[i], onFirstInteraction, true);
+      }
+    }
+
+    for (var i = 0; i < events.length; i++) {
+      document.addEventListener(events[i], onFirstInteraction, true);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setupFirstInteractionDetection);
+  } else {
+    setupFirstInteractionDetection();
+  }
+
+  // --- Auto Error Capture ---
+
+  window.addEventListener('error', function(event) {
+    if (errorSent) return;
+    errorSent = true;
+    sendEvent('error', {
+      message: event.message || 'Unknown error',
+      source: event.filename || '',
+      lineno: event.lineno || 0,
+      colno: event.colno || 0,
+      auto_captured: true
+    });
+  });
+
+  window.addEventListener('unhandledrejection', function(event) {
+    if (errorSent) return;
+    errorSent = true;
+    var reason = event.reason;
+    sendEvent('error', {
+      message: (reason instanceof Error) ? reason.message : String(reason),
+      type: 'unhandled_promise_rejection',
+      auto_captured: true
+    });
+  });
+
+  // --- Public API ---
+
+  window.playablesSDK = {
+    complete: function(score) {
+      sendEvent('game_ended', {
+        score: score,
+        completed: true
+      });
+    },
+
+    error: function(message) {
+      if (errorSent) return;
+      errorSent = true;
+      sendEvent('error', {
+        message: message || 'Unknown error',
+        auto_captured: false
+      });
+    },
+
+    sendEvent: function(eventName, payload) {
+      if (!eventName || typeof eventName !== 'string') return;
+      sendEvent(eventName, payload);
+    }
+  };
+
+  // Kick off rAF detection in case no game code calls rAF immediately
+  if (originalRAF) {
+    originalRAF.call(window, onFrame);
+  }
+})();</script>
+<!-- PLAYABLE_TOUCH_PATCH_V1 --><script>
+(function() {
+  if (window.__playableTouchPatchInstalled) return;
+  window.__playableTouchPatchInstalled = true;
+  var origAdd = EventTarget.prototype.addEventListener;
+  var blockedTypes = { touchstart: 1, touchmove: 1, wheel: 1 };
+  EventTarget.prototype.addEventListener = function(type, listener, options) {
+    if (blockedTypes[type]) {
+      if (options === undefined || options === null) {
+        options = { passive: true };
+      } else if (typeof options === 'boolean') {
+        options = { capture: options, passive: true };
+      } else {
+        options = Object.assign({}, options, { passive: true });
+      }
+    }
+    return origAdd.call(this, type, listener, options);
+  };
+})();
+</script><script>window.Intl=window.Intl||{};Intl.t=function(s){return(Intl._locale&&Intl._locale[s])||s;};</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>booeb.co - লিংক শর্টেনার অ্যাডমিন প্যানেল</title>
+<style>
+    :root {
+        --bg: #0f1117;
+        --bg-secondary: #161a23;
+        --bg-tertiary: #1e2430;
+        --border: #2a3142;
+        --text: #e8eaf0;
+        --text-secondary: #9ba3b4;
+        --primary: #6366f1;
+        --primary-hover: #4f46e5;
+        --success: #22c55e;
+        --danger: #ef4444;
+        --warning: #f59e0b;
+        --shadow: 0 4px 6px -1px rgba(0,0,0,0.4), 0 2px 4px -2px rgba(0,0,0,0.4);
+        --shadow-lg: 0 20px 25px -5px rgba(0,0,0,0.4), 0 8px 10px -6px rgba(0,0,0,0.4);
+        --radius: 12px;
+        --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    body {
+        font-family: 'Hind Siliguri', system-ui, -apple-system, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+        min-height: 100vh;
+        background-image: 
+            radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.1) 0px, transparent 50%),
+            radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.1) 0px, transparent 50%);
+    }
+
+    @import url('https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@300;400;500;600;700&display=swap');
+
+    .hidden { display: none !important; }
+
+    .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+
+    /* Login Page */
+    .login-wrapper {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+    }
+
+    .login-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 40px;
+        width: 100%;
+        max-width: 420px;
+        box-shadow: var(--shadow-lg);
+        animation: slideUp 0.5s ease;
+    }
+
+    @keyframes slideUp {
+        from { opacity: 0; transform: translateY(20px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .logo {
+        text-align: center;
+        margin-bottom: 32px;
+    }
+
+    .logo h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, var(--primary), #8b5cf6);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 8px;
+    }
+
+    .logo p {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+    }
+
+    .form-group {
+        margin-bottom: 20px;
+    }
+
+    .form-group label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: 500;
+        color: var(--text);
+        font-size: 0.9rem;
+    }
+
+    .input {
+        width: 100%;
+        padding: 12px 16px;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--text);
+        font-size: 1rem;
+        font-family: inherit;
+        transition: var(--transition);
+    }
+
+    .input:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+
+    .btn {
+        width: 100%;
+        padding: 12px 24px;
+        background: var(--primary);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: var(--transition);
+        font-family: inherit;
+    }
+
+    .btn:hover {
+        background: var(--primary-hover);
+        transform: translateY(-1px);
+        box-shadow: var(--shadow);
+    }
+
+    .btn:active {
+        transform: translateY(0);
+    }
+
+    .btn-sm {
+        padding: 8px 16px;
+        font-size: 0.875rem;
+        width: auto;
+    }
+
+    .btn-success { background: var(--success); }
+    .btn-success:hover { background: #16a34a; }
+    .btn-danger { background: var(--danger); }
+    .btn-danger:hover { background: #dc2626; }
+    .btn-ghost {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border);
+    }
+    .btn-ghost:hover {
+        background: var(--border);
+    }
+
+    .error-msg {
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid var(--danger);
+        color: #fca5a5;
+        padding: 12px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        font-size: 0.9rem;
+        animation: shake 0.4s;
+    }
+
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        25% { transform: translateX(-10px); }
+        75% { transform: translateX(10px); }
+    }
+
+    /* Dashboard */
+    .header {
+        background: var(--bg-secondary);
+        border-bottom: 1px solid var(--border);
+        padding: 20px 0;
+        margin-bottom: 32px;
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        backdrop-filter: blur(10px);
+    }
+
+    .header-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .header-title h2 {
+        font-size: 1.5rem;
+        margin-bottom: 4px;
+    }
+
+    .header-title p {
+        color: var(--text-secondary);
+        font-size: 0.875rem;
+    }
+
+    .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+        margin-bottom: 32px;
+    }
+
+    .stat-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 24px;
+        transition: var(--transition);
+    }
+
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow);
+    }
+
+    .stat-label {
+        color: var(--text-secondary);
+        font-size: 0.875rem;
+        margin-bottom: 8px;
+    }
+
+    .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        background: linear-gradient(135deg, var(--primary), #8b5cf6);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    .card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 24px;
+        margin-bottom: 24px;
+    }
+
+    .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .card-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+    }
+
+    .form-row {
+        display: grid;
+        grid-template-columns: 2fr 1fr auto;
+        gap: 12px;
+        align-items: end;
+    }
+
+    /* Table */
+    .table-wrapper {
+        overflow-x: auto;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    thead {
+        background: var(--bg-tertiary);
+    }
+
+    th {
+        padding: 14px 16px;
+        text-align: left;
+        font-weight: 600;
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    td {
+        padding: 16px;
+        border-top: 1px solid var(--border);
+    }
+
+    tbody tr {
+        transition: var(--transition);
+    }
+
+    tbody tr:hover {
+        background: var(--bg-tertiary);
+    }
+
+    .short-code {
+        font-family: 'Courier New', monospace;
+        background: var(--bg-tertiary);
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-weight: 600;
+        color: var(--primary);
+        display: inline-block;
+    }
+
+    .url-cell {
+        max-width: 300px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--text-secondary);
+    }
+
+    .actions {
+        display: flex;
+        gap: 8px;
+    }
+
+    .badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        background: rgba(99, 102, 241, 0.1);
+        color: var(--primary);
+    }
+
+    /* Toast */
+    .toast {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border);
+        border-left: 4px solid var(--success);
+        padding: 16px 20px;
+        border-radius: 8px;
+        box-shadow: var(--shadow-lg);
+        z-index: 1000;
+        animation: slideInRight 0.3s ease;
+        max-width: 400px;
+    }
+
+    .toast.error {
+        border-left-color: var(--danger);
+    }
+
+    @keyframes slideInRight {
+        from { transform: translateX(400px); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+    }
+
+    /* Empty State */
+    .empty {
+        text-align: center;
+        padding: 60px 20px;
+        color: var(--text-secondary);
+    }
+
+    .empty-icon {
+        font-size: 3rem;
+        margin-bottom: 16px;
+        opacity: 0.5;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        .header-content {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .form-row {
+            grid-template-columns: 1fr;
+        }
+
+        .stats {
+            grid-template-columns: 1fr;
+        }
+
+        .table-wrapper {
+            font-size: 0.875rem;
+        }
+
+        th, td {
+            padding: 12px 8px;
+        }
+
+        .actions {
+            flex-direction: column;
+        }
+
+        .login-card {
+            padding: 32px 24px;
+        }
+    }
+</style>
+</head>
+<body>
+
+<!-- Login Page -->
+<div id="loginPage" class="login-wrapper hidden">
+    <div class="login-card">
+        <div class="logo">
+            <h1>booeb.co</h1>
+            <p>অ্যাডমিন প্যানেল - লিংক শর্টেনার</p>
+        </div>
+        <div id="errorMsg" class="error-msg hidden"></div>
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="email">ইমেইল অ্যাড্রেস</label>
+                <input type="email" id="email" class="input" placeholder="আপনার ইমেইল দিন" required="">
+            </div>
+            <div class="form-group">
+                <label for="password">পাসওয়ার্ড</label>
+                <input type="password" id="password" class="input" placeholder="যেকোনো পাসওয়ার্ড দিন" required="">
+            </div>
+            <button type="submit" class="btn">লগইন করুন</button>
+        </form>
+    </div>
+</div>
+
+<!-- Dashboard -->
+<div id="dashboard" class="">
+    <header class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="header-title">
+                    <h2>ড্যাশবোর্ড</h2>
+                    <p>booeb.co লিংক ম্যানেজমেন্ট সিস্টেম</p>
+                </div>
+                <button id="logoutBtn" class="btn btn-sm btn-ghost">লগআউট</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- Stats -->
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-label">মোট লিংক</div>
+                <div class="stat-value" id="totalLinks">5</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">মোট ক্লিক</div>
+                <div class="stat-value" id="totalClicks">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">আজকের ক্লিক</div>
+                <div class="stat-value" id="todayClicks">0</div>
+            </div>
+        </div>
+
+        <!-- Create Link Card -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">নতুন শর্ট লিংক তৈরি করুন</h3>
+            </div>
+            <form id="createLinkForm">
+                <div class="form-row">
+                    <div class="form-group" style="margin:0;">
+                        <label for="originalUrl">অরিজিনাল URL</label>
+                        <input type="url" id="originalUrl" class="input" placeholder="https://example.com/very-long-url" required="">
+                    </div>
+                    <div class="form-group" style="margin:0;">
+                        <label for="customCode">কাস্টম কোড (ঐচ্ছিক)</label>
+                        <input type="text" id="customCode" class="input" placeholder="খালি রাখলে অটো হবে" maxlength="10">
+                    </div>
+                    <button type="submit" class="btn">শর্ট করুন</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Links Table -->
+        <div class="card">
+            <div class="card-header">
+                <h3 class="card-title">সকল লিংক</h3>
+                <span class="badge" id="linksCount">5 টি লিংক</span>
+            </div>
+            <div class="table-wrapper">
+                <table id="linksTable">
+                    <thead>
+                        <tr>
+                            <th>শর্ট কোড</th>
+                            <th>অরিজিনাল URL</th>
+                            <th>ক্লিক</th>
+                            <th>তৈরির তারিখ</th>
+                            <th>অ্যাকশন</th>
+                        </tr>
+                    </thead>
+                    <tbody id="linksTableBody">
+                <tr>
+                    <td><span class="short-code">https</span></td>
+                    <td><div class="url-cell" title="https://www.instagram.com/bithilikha.com.official?igsh=bGEyOXRuMW9ueHlq">https://www.instagram.com/bithilikha.com.official?igsh=bGEyOXRuMW9ueHlq</div></td>
+                    <td><span class="badge">0</span></td>
+                    <td>১৩ জুন, ২০২৬</td>
+                    <td>
+                        <div class="actions">
+                            <button class="btn btn-sm btn-success" onclick="copyLink('https')">কপি</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteLink('https')">ডিলিট</button>
+                        </div>
+                    </td>
+                </tr>
+            
+                <tr>
+                    <td><span class="short-code">6qvd</span></td>
+                    <td><div class="url-cell" title="https://www.instagram.com/bithilikha.com.official?igsh=bGEyOXRuMW9ueHlq">https://www.instagram.com/bithilikha.com.official?igsh=bGEyOXRuMW9ueHlq</div></td>
+                    <td><span class="badge">0</span></td>
+                    <td>১৩ জুন, ২০২৬</td>
+                    <td>
+                        <div class="actions">
+                            <button class="btn btn-sm btn-success" onclick="copyLink('6qvd')">কপি</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteLink('6qvd')">ডিলিট</button>
+                        </div>
+                    </td>
+                </tr>
+            
+                <tr>
+                    <td><span class="short-code">27y</span></td>
+                    <td><div class="url-cell" title="https://bithilikha.bolt.host/">https://bithilikha.bolt.host/</div></td>
+                    <td><span class="badge">0</span></td>
+                    <td>১৩ জুন, ২০২৬</td>
+                    <td>
+                        <div class="actions">
+                            <button class="btn btn-sm btn-success" onclick="copyLink('27y')">কপি</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteLink('27y')">ডিলিট</button>
+                        </div>
+                    </td>
+                </tr>
+            
+                <tr>
+                    <td><span class="short-code">btl</span></td>
+                    <td><div class="url-cell" title="https://bithilikha.lovable.app/">https://bithilikha.lovable.app/</div></td>
+                    <td><span class="badge">0</span></td>
+                    <td>১৩ জুন, ২০২৬</td>
+                    <td>
+                        <div class="actions">
+                            <button class="btn btn-sm btn-success" onclick="copyLink('btl')">কপি</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteLink('btl')">ডিলিট</button>
+                        </div>
+                    </td>
+                </tr>
+            
+                <tr>
+                    <td><span class="short-code">bth</span></td>
+                    <td><div class="url-cell" title="https://bithilikha.bolt.host/">https://bithilikha.bolt.host/</div></td>
+                    <td><span class="badge">0</span></td>
+                    <td>১৩ জুন, ২০২৬</td>
+                    <td>
+                        <div class="actions">
+                            <button class="btn btn-sm btn-success" onclick="copyLink('bth')">কপি</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteLink('bth')">ডিলিট</button>
+                        </div>
+                    </td>
+                </tr>
+            </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+</div>
+
+<div id="toastContainer"></div>
+
+<script>
+    // ==================== SERVER SETUP INSTRUCTIONS ====================
+    /*
+    লাইভ সার্ভারে ব্যবহার করার জন্য:
+
+    1. .htaccess ফাইল (Apache):
+    RewriteEngine On
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^([a-zA-Z0-9]+)$ redirect.php?code=$1 [L,QSA]
+
+    2. redirect.php ফাইল:
+    <?php
+    $code = $_GET['code'] ?? '';
+    $links = json_decode(file_get_contents('links.json'), true) ?? [];
+    
+    if(isset($links[$code])) {
+        // Click count increment
+        $links[$code]['clicks'] = ($links[$code]['clicks'] ?? 0) + 1;
+        $links[$code]['lastClick'] = date('Y-m-d');
+        file_put_contents('links.json', json_encode($links));
+        
+        // Redirect
+        header("Location: " . $links[$code]['url']);
+        exit;
+    } else {
+        header("HTTP/1.0 404 Not Found");
+        echo "404 - Link Not Found";
+    }
+    ?>
+
+    3. MySQL টেবিল:
+    CREATE TABLE short_links (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        short_code VARCHAR(10) UNIQUE NOT NULL,
+        original_url TEXT NOT NULL,
+        clicks INT DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_click DATE NULL
+    );
+    
+    নোট: এই ডেমো localStorage ব্যবহার করে। প্রোডাকশনে PHP/MySQL API ব্যবহার করুন।
+    */
+    // ===================================================================
+
+    const ADMIN_EMAIL = 'booeb.com@gmail.com';
+    const DOMAIN = 'booeb.co';
+    const STORAGE_KEY = 'booeb_links';
+    const SESSION_KEY = 'booeb_session';
+
+    // Pre-inserted links as per requirement
+    const DEFAULT_LINKS = {
+        'bth': {
+            url: 'https://bithilikha.bolt.host/',
+            clicks: 0,
+            createdAt: new Date().toISOString(),
+            lastClick: null
+        },
+        'btl': {
+            url: 'https://bithilikha.lovable.app/',
+            clicks: 0,
+            createdAt: new Date().toISOString(),
+            lastClick: null
+        }
+    };
+
+    // State
+    let links = {};
+    let isLoggedIn = false;
+
+    // DOM Elements
+    const loginPage = document.getElementById('loginPage');
+    const dashboard = document.getElementById('dashboard');
+    const loginForm = document.getElementById('loginForm');
+    const createLinkForm = document.getElementById('createLinkForm');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const errorMsg = document.getElementById('errorMsg');
+
+    // Initialize
+    function init() {
+        loadLinks();
+        checkSession();
+        attachEventListeners();
+    }
+
+    // Load links from localStorage
+    function loadLinks() {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+            links = JSON.parse(stored);
+        } else {
+            // Initialize with default links
+            links = { ...DEFAULT_LINKS };
+            saveLinks();
+        }
+    }
+
+    // Save links to localStorage
+    function saveLinks() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(links));
+        updateStats();
+        renderTable();
+    }
+
+    // Check if logged in
+    function checkSession() {
+        const session = localStorage.getItem(SESSION_KEY);
+        if (session === 'logged_in') {
+            showDashboard();
+        } else {
+            showLogin();
+        }
+    }
+
+    // Attach event listeners
+    function attachEventListeners() {
+        loginForm.addEventListener('submit', handleLogin);
+        createLinkForm.addEventListener('submit', handleCreateLink);
+        logoutBtn.addEventListener('click', handleLogout);
+    }
+
+    // Login handler
+    function handleLogin(e) {
+        e.preventDefault();
+        const email = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+
+        if (email.toLowerCase() !== ADMIN_EMAIL) {
+            showError('শুধুমাত্র admin ইমেইল দিয়ে লগইন করতে পারবেন');
+            return;
+        }
+
+        if (!password) {
+            showError('পাসওয়ার্ড দিন');
+            return;
+        }
+
+        localStorage.setItem(SESSION_KEY, 'logged_in');
+        showToast('সফলভাবে লগইন হয়েছে!', 'success');
+        showDashboard();
+    }
+
+    // Logout handler
+    function handleLogout() {
+        localStorage.removeItem(SESSION_KEY);
+        showToast('লগআউট সম্পন্ন হয়েছে', 'success');
+        showLogin();
+    }
+
+    // Show login page
+    function showLogin() {
+        loginPage.classList.remove('hidden');
+        dashboard.classList.add('hidden');
+        loginForm.reset();
+        isLoggedIn = false;
+    }
+
+    // Show dashboard
+    function showDashboard() {
+        loginPage.classList.add('hidden');
+        dashboard.classList.remove('hidden');
+        isLoggedIn = true;
+        updateStats();
+        renderTable();
+    }
+
+    // Show error message
+    function showError(msg) {
+        errorMsg.textContent = msg;
+        errorMsg.classList.remove('hidden');
+        setTimeout(() => {
+            errorMsg.classList.add('hidden');
+        }, 3000);
+    }
+
+    // Create short link
+    function handleCreateLink(e) {
+        e.preventDefault();
+        const originalUrl = document.getElementById('originalUrl').value.trim();
+        let customCode = document.getElementById('customCode').value.trim();
+
+        // Validate URL
+        try {
+            new URL(originalUrl);
+        } catch {
+            showToast('সঠিক URL দিন', 'error');
+            return;
+        }
+
+        // Generate code if empty
+        if (!customCode) {
+            customCode = generateShortCode();
+        } else {
+            // Validate custom code
+            if (!/^[a-zA-Z0-9-_]+$/.test(customCode)) {
+                showToast('কোডে শুধু অক্ষর, সংখ্যা, - এবং _ ব্যবহার করুন', 'error');
+                return;
+            }
+        }
+
+        // Check if code exists
+        if (links[customCode]) {
+            showToast('এই কোড ইতিমধ্যে ব্যবহার করা হয়েছে', 'error');
+            return;
+        }
+
+        // Add link
+        links[customCode] = {
+            url: originalUrl,
+            clicks: 0,
+            createdAt: new Date().toISOString(),
+            lastClick: null
+        };
+
+        saveLinks();
+        createLinkForm.reset();
+        showToast(`শর্ট লিংক তৈরি হয়েছে: ${DOMAIN}/${customCode}`, 'success');
+    }
+
+    // Generate random 3-4 char code
+    function generateShortCode() {
+        const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+        const length = Math.random() > 0.5 ? 3 : 4;
+        let code = '';
+        do {
+            code = '';
+            for (let i = 0; i < length; i++) {
+                code += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+        } while (links[code]); // Ensure unique
+        return code;
+    }
+
+    // Delete link
+    function deleteLink(code) {
+        if (confirm(`আপনি কি নিশ্চিত? ${DOMAIN}/${code} ডিলিট হবে`)) {
+            delete links[code];
+            saveLinks();
+            showToast('লিংক ডিলিট করা হয়েছে', 'success');
+        }
+    }
+
+    // Copy link to clipboard
+    function copyLink(code) {
+        const shortUrl = `https://${DOMAIN}/${code}`;
+        navigator.clipboard.writeText(shortUrl).then(() => {
+            showToast(`কপি করা হয়েছে: ${shortUrl}`, 'success');
+        }).catch(() => {
+            showToast('কপি করতে ব্যর্থ', 'error');
+        });
+    }
+
+    // Simulate click for demo
+    function simulateClick(code) {
+        if (links[code]) {
+            links[code].clicks++;
+            links[code].lastClick = new Date().toISOString().split('T')[0];
+            saveLinks();
+        }
+    }
+
+    // Update stats
+    function updateStats() {
+        const totalLinks = Object.keys(links).length;
+        const totalClicks = Object.values(links).reduce((sum, link) => sum + link.clicks, 0);
+        const today = new Date().toISOString().split('T')[0];
+        const todayClicks = Object.values(links)
+            .filter(link => link.lastClick === today)
+            .reduce((sum, link) => sum + link.clicks, 0);
+
+        document.getElementById('totalLinks').textContent = totalLinks;
+        document.getElementById('totalClicks').textContent = totalClicks;
+        document.getElementById('todayClicks').textContent = todayClicks;
+        document.getElementById('linksCount').textContent = `${totalLinks} টি লিংক`;
+    }
+
+    // Render table
+    function renderTable() {
+        const tbody = document.getElementById('linksTableBody');
+        const codes = Object.keys(links).sort((a, b) => {
+            return new Date(links[b].createdAt) - new Date(links[a].createdAt);
+        });
+
+        if (codes.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="empty">
+                        <div class="empty-icon">🔗</div>
+                        <p>কোনো লিংক নেই। প্রথম লিংক তৈরি করুন!</p>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = codes.map(code => {
+            const link = links[code];
+            const date = new Date(link.createdAt).toLocaleDateString('bn-BD', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
+            return `
+                <tr>
+                    <td><span class="short-code">${code}</span></td>
+                    <td><div class="url-cell" title="${link.url}">${link.url}</div></td>
+                    <td><span class="badge">${link.clicks}</span></td>
+                    <td>${date}</td>
+                    <td>
+                        <div class="actions">
+                            <button class="btn btn-sm btn-success" onclick="copyLink('${code}')">কপি</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteLink('${code}')">ডিলিট</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    // Toast notification
+    function showToast(message, type = 'success') {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = `toast ${type === 'error' ? 'error' : ''}`;
+        toast.textContent = message;
+        container.appendChild(toast);
+
+        setTimeout(() => {
+            toast.style.animation = 'slideInRight 0.3s ease reverse';
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
+    // Make functions global for onclick
+    window.copyLink = copyLink;
+    window.deleteLink = deleteLink;
+
+    // Start app
+    init();
+</script>
+<script>(function(){document.addEventListener("click",function(e){var a=e.target.closest("[data-product-id]");if(!a)return;e.preventDefault();var pid=a.getAttribute("data-product-id");if(pid)parent.postMessage({type:"ecto-artifact-link-click",productId:pid},"*")})})();</script>
+
+</body></html>
