@@ -1,0 +1,11 @@
+RewriteEngine On
+RewriteBase /
+
+RewriteRule ^admin/?$ admin.php [L,QSA]
+RewriteRule ^api/?$ api.php [L,QSA]
+RewriteRule ^qr/([a-zA-Z0-9_-]+)$ qr.php?c=$1 [L,QSA]
+RewriteRule ^unlock/([a-zA-Z0-9_-]+)$ unlock.php?c=$1 [L,QSA]
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^([a-zA-Z0-9_-]+)$ redirect.php?c=$1 [L,QSA]
